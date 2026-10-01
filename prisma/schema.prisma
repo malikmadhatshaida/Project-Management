@@ -1,0 +1,731 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id           String          @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  slug         String          @unique
+  logo         String?
+  description  String?
+  timezone     String          @default("UTC")
+  workingDays  String          @default("Monday,Tuesday,Wednesday,Thursday,Friday")
+  workingHours String          @default("09:00-18:00")
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  members      CompanyMember[]
+  roles        Role[]
+  departments  Department[]
+  teams        Team[]
+  projects     Project[]
+  tasks        Task[]
+  bugs         Bug[]
+  requests     Request[]
+  documents    Document[]
+  meetings     Meeting[]
+  timeEntries  TimeEntry[]
+  tags         Tag[]
+  invitations  Invitation[]
+  auditLogs    AuditLog[]
+  notifications Notification[]
+}
+
+model User {
+  id           String          @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  email        String          @unique
+  passwordHash String
+  avatar       String?
+  phone        String?
+  jobTitle     String?
+  bio          String?
+  skills       String?
+  isSuperAdmin Boolean         @default(false)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  memberships       CompanyMember[]
+  projectMembers    ProjectMember[]
+  assignedTasks     TaskAssignee[]
+  reportedTasks     Task[]               @relation("TaskReporter")
+  taskComments      TaskComment[]
+  taskActivities    TaskActivity[]
+  taskAttachments   TaskAttachment[]
+  reportedBugs      Bug[]                @relation("BugReporter")
+  assignedBugs      Bug[]                @relation("BugAssignedDev")
+  qaBugs            Bug[]                @relation("BugQATester")
+  bugComments       BugComment[]
+  bugActivities     BugActivity[]
+  bugAttachments    BugAttachment[]
+  requests          Request[]            @relation("RequestRequester")
+  assignedRequests  Request[]            @relation("RequestAssignedEmployee")
+  requestComments   RequestComment[]
+  approvals         Approval[]
+  timeEntries       TimeEntry[]
+  documents         Document[]           @relation("DocumentCreator")
+  documentVersions  DocumentVersion[]
+  organizedMeetings Meeting[]            @relation("MeetingOrganizer")
+  meetings          MeetingParticipant[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]           @relation("AuditActor")
+  invitationsSent   Invitation[]         @relation("InvitedByUser")
+  ownedProjects     Project[]            @relation("ProjectOwner")
+  managedProjects   Project[]            @relation("ProjectManager")
+  ledTeams          Team[]               @relation("TeamLeader")
+  managedDepts      Department[]         @relation("DeptManager")
+  teamMembers       TeamMember[]
+}
+
+model CompanyMember {
+  id           String       @id @default(auto()) @map("_id") @db.ObjectId
+  companyId    String       @db.ObjectId
+  userId       String       @db.ObjectId
+  roleId       String       @db.ObjectId
+  departmentId String?      @db.ObjectId
+  teamId       String?      @db.ObjectId
+  status       String       @default("ACTIVE") // ACTIVE, INVITED, SUSPENDED
+  joiningDate  DateTime     @default(now())
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id])
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  team         Team?        @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, userId])
+  @@index([companyId])
+  @@index([userId])
+}
+
+model Role {
+  id          String           @id @default(auto()) @map("_id") @db.ObjectId
+  companyId   String?          @db.ObjectId
+  name        String // SUPER_ADMIN, COMPANY_ADMIN, PROJECT_MANAGER, TEAM_LEAD, EMPLOYEE, CLIENT, GUEST
+  displayName String
+  description String?
+  isSystem    Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  company     Company?         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  permissions RolePermission[]
+  members     CompanyMember[]
+  invitations Invitation[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+model Permission {
+  id          String           @id @default(auto()) @map("_id") @db.ObjectId
+  code        String           @unique
+  name        String
+  description String?
+  module      String
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  id           String     @id @default(auto()) @map("_id") @db.ObjectId
+  roleId       String     @db.ObjectId
+  permissionId String     @db.ObjectId
+
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+}
+
+model Department {
+  id          String          @id @default(auto()) @map("_id") @db.ObjectId
+  companyId   String          @db.ObjectId
+  name        String
+  description String?
+  managerId   String?         @db.ObjectId
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  manager     User?           @relation("DeptManager", fields: [managerId], references: [id], onDelete: SetNull)
+  teams       Team[]
+  members     CompanyMember[]
+  projects    Project[]
+  tasks       Task[]
+  documents   Document[]
+  requests    Request[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+model Team {
+  id           String          @id @default(auto()) @map("_id") @db.ObjectId
+  companyId    String          @db.ObjectId
+  departmentId String?         @db.ObjectId
+  name         String
+  description  String?
+  teamLeadId   String?         @db.ObjectId
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  company      Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department   Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  teamLead     User?           @relation("TeamLeader", fields: [teamLeadId], references: [id], onDelete: SetNull)
+  members      TeamMember[]
+  companyMembers CompanyMember[]
+  projects     Project[]
+  tasks        Task[]
+  documents    Document[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([departmentId])
+}
+
+model TeamMember {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  teamId    String   @db.ObjectId
+  userId    String   @db.ObjectId
+  role      String   @default("MEMBER")
+  createdAt DateTime @default(now())
+
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([teamId])
+}
+
+model Project {
+  id           String          @id @default(auto()) @map("_id") @db.ObjectId
+  companyId    String          @db.ObjectId
+  name         String
+  code         String
+  description  String?
+  status       String          @default("ACTIVE") // PLANNING, ACTIVE, ON_HOLD, COMPLETED, ARCHIVED
+  priority     String          @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  startDate    DateTime?
+  endDate      DateTime?
+  progress     Int             @default(0) // 0-100
+  ownerId      String?         @db.ObjectId
+  managerId    String?         @db.ObjectId
+  departmentId String?         @db.ObjectId
+  teamId       String?         @db.ObjectId
+  isDeleted    Boolean         @default(false)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  company      Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  owner        User?           @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  manager      User?           @relation("ProjectManager", fields: [managerId], references: [id], onDelete: SetNull)
+  department   Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  team         Team?           @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  members      ProjectMember[]
+  tags         ProjectTag[]
+  milestones   Milestone[]
+  tasks        Task[]
+  bugs         Bug[]
+  documents    Document[]
+  meetings     Meeting[]
+  timeEntries  TimeEntry[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([status])
+}
+
+model ProjectMember {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  projectId String   @db.ObjectId
+  userId    String   @db.ObjectId
+  role      String   @default("MEMBER") // MANAGER, MEMBER, VIEWER
+  joinedAt  DateTime @default(now())
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+}
+
+model Tag {
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
+  companyId String       @db.ObjectId
+  name      String
+  color     String       @default("#3b82f6")
+  createdAt DateTime     @default(now())
+
+  company   Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projects  ProjectTag[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+model ProjectTag {
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  projectId String  @db.ObjectId
+  tagId     String  @db.ObjectId
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, tagId])
+}
+
+model Milestone {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  projectId   String    @db.ObjectId
+  title       String
+  description String?
+  dueDate     DateTime?
+  status      String    @default("PENDING") // PENDING, COMPLETED
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Task {
+  id             String           @id @default(auto()) @map("_id") @db.ObjectId
+  companyId      String           @db.ObjectId
+  projectId      String           @db.ObjectId
+  title          String
+  description    String?
+  status         String           @default("TODO") // BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, BLOCKED, COMPLETED
+  priority       String           @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  reporterId     String?          @db.ObjectId
+  departmentId   String?          @db.ObjectId
+  teamId         String?          @db.ObjectId
+  parentTaskId   String?          @db.ObjectId
+  startDate      DateTime?
+  dueDate        DateTime?
+  estimatedHours Float?           @default(0)
+  actualHours    Float?           @default(0)
+  orderIndex     Int              @default(0)
+  isDeleted      Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  company        Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reporter       User?            @relation("TaskReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  department     Department?      @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  team           Team?            @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  parentTask     Task?            @relation("SubTasks", fields: [parentTaskId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  subtasks       Task[]           @relation("SubTasks")
+
+  assignees      TaskAssignee[]
+  checklists     TaskChecklist[]
+  dependencies   TaskDependency[] @relation("TaskDependencies")
+  dependedOnBy   TaskDependency[] @relation("DependentTasks")
+  comments       TaskComment[]
+  attachments    TaskAttachment[]
+  activities     TaskActivity[]
+  timeEntries    TimeEntry[]
+  documents      Document[]
+
+  @@index([companyId])
+  @@index([projectId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+model TaskAssignee {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  taskId     String   @db.ObjectId
+  userId     String   @db.ObjectId
+  assignedAt DateTime @default(now())
+
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+  @@index([taskId])
+  @@index([userId])
+}
+
+model TaskChecklist {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  taskId      String   @db.ObjectId
+  title       String
+  isCompleted Boolean  @default(false)
+  orderIndex  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+model TaskDependency {
+  id              String @id @default(auto()) @map("_id") @db.ObjectId
+  taskId          String @db.ObjectId
+  dependsOnTaskId String @db.ObjectId
+  type            String @default("BLOCKS") // BLOCKS, BLOCKED_BY
+
+  task            Task   @relation("TaskDependencies", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOnTask   Task   @relation("DependentTasks", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, dependsOnTaskId])
+}
+
+model TaskComment {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  taskId    String   @db.ObjectId
+  authorId  String   @db.ObjectId
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+model TaskAttachment {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  taskId       String   @db.ObjectId
+  name         String
+  url          String
+  fileType     String
+  fileSize     Int
+  uploadedById String   @db.ObjectId
+  createdAt    DateTime @default(now())
+
+  task         Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+model TaskActivity {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  taskId    String   @db.ObjectId
+  userId    String   @db.ObjectId
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+model Bug {
+  id                String          @id @default(auto()) @map("_id") @db.ObjectId
+  companyId         String          @db.ObjectId
+  projectId         String          @db.ObjectId
+  title             String
+  description       String
+  reporterId        String?         @db.ObjectId
+  assignedDevId     String?         @db.ObjectId
+  qaTesterId        String?         @db.ObjectId
+  severity          String          @default("MEDIUM") // CRITICAL, HIGH, MEDIUM, LOW
+  priority          String          @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  status            String          @default("OPEN") // OPEN, ASSIGNED, IN_PROGRESS, FIXED, READY_FOR_TESTING, VERIFIED, REOPENED, CLOSED
+  environment       String?
+  browserDevice     String?
+  stepsToReproduce  String?
+  expectedResult    String?
+  actualResult      String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  resolvedAt        DateTime?
+
+  company           Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project           Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reporter          User?           @relation("BugReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  assignedDev       User?           @relation("BugAssignedDev", fields: [assignedDevId], references: [id], onDelete: SetNull)
+  qaTester          User?           @relation("BugQATester", fields: [qaTesterId], references: [id], onDelete: SetNull)
+
+  comments          BugComment[]
+  attachments       BugAttachment[]
+  activities        BugActivity[]
+
+  @@index([companyId])
+  @@index([projectId])
+  @@index([status])
+}
+
+model BugComment {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  bugId     String   @db.ObjectId
+  authorId  String   @db.ObjectId
+  content   String
+  createdAt DateTime @default(now())
+
+  bug       Bug      @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([bugId])
+}
+
+model BugAttachment {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  bugId        String   @db.ObjectId
+  name         String
+  url          String
+  fileType     String
+  fileSize     Int
+  uploadedById String   @db.ObjectId
+  createdAt    DateTime @default(now())
+
+  bug          Bug      @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([bugId])
+}
+
+model BugActivity {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  bugId     String   @db.ObjectId
+  userId    String   @db.ObjectId
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+
+  bug       Bug      @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([bugId])
+}
+
+model Request {
+  id                   String           @id @default(auto()) @map("_id") @db.ObjectId
+  companyId            String           @db.ObjectId
+  requesterId          String           @db.ObjectId
+  type                 String // LEAVE, IT_SUPPORT, EQUIPMENT, HR_REQUEST, WORK_FROM_HOME, ACCESS_REQUEST, GENERAL
+  subject              String
+  description          String
+  priority             String           @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  status               String           @default("PENDING") // PENDING, UNDER_REVIEW, APPROVED, REJECTED, COMPLETED, CANCELLED
+  assignedDepartmentId String?          @db.ObjectId
+  assignedEmployeeId   String?          @db.ObjectId
+  attachmentUrl        String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  company              Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  requester            User             @relation("RequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  assignedDepartment   Department?      @relation(fields: [assignedDepartmentId], references: [id], onDelete: SetNull)
+  assignedEmployee     User?            @relation("RequestAssignedEmployee", fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+
+  comments             RequestComment[]
+  approvals            Approval[]
+
+  @@index([companyId])
+  @@index([requesterId])
+  @@index([status])
+}
+
+model RequestComment {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  requestId String   @db.ObjectId
+  authorId  String   @db.ObjectId
+  content   String
+  createdAt DateTime @default(now())
+
+  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+model Approval {
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  requestId  String    @db.ObjectId
+  approverId String    @db.ObjectId
+  step       String // MANAGER_REVIEW, ADMIN_HR_REVIEW
+  status     String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  comments   String?
+  approvedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  request    Request   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  approver   User      @relation(fields: [approverId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+model TimeEntry {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  companyId       String   @db.ObjectId
+  userId          String   @db.ObjectId
+  projectId       String?  @db.ObjectId
+  taskId          String?  @db.ObjectId
+  date            DateTime @default(now())
+  durationMinutes Int // Total duration in minutes
+  notes           String?
+  isBillable      Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task            Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([projectId])
+  @@index([date])
+}
+
+model Document {
+  id           String            @id @default(auto()) @map("_id") @db.ObjectId
+  companyId    String            @db.ObjectId
+  departmentId String?           @db.ObjectId
+  teamId       String?           @db.ObjectId
+  projectId    String?           @db.ObjectId
+  taskId       String?           @db.ObjectId
+  title        String
+  description  String?
+  fileUrl      String
+  fileType     String
+  fileSize     Int
+  createdById  String            @db.ObjectId
+  isDeleted    Boolean           @default(false)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department   Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  team         Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  project      Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task         Task?             @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  createdBy    User              @relation("DocumentCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  versions     DocumentVersion[]
+
+  @@index([companyId])
+  @@index([projectId])
+}
+
+model DocumentVersion {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  documentId    String   @db.ObjectId
+  versionNumber Int      @default(1)
+  fileUrl       String
+  changeLog     String?
+  createdById   String   @db.ObjectId
+  createdAt     DateTime @default(now())
+
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdBy     User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+}
+
+model Meeting {
+  id          String               @id @default(auto()) @map("_id") @db.ObjectId
+  companyId   String               @db.ObjectId
+  projectId   String?              @db.ObjectId
+  title       String
+  description String?
+  organizerId String               @db.ObjectId
+  date        DateTime
+  startTime   String // "10:00"
+  endTime     String // "11:00"
+  meetingUrl  String?
+  location    String?
+  notes       String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  company     Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  project     Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  organizer   User                 @relation("MeetingOrganizer", fields: [organizerId], references: [id], onDelete: Cascade)
+
+  participants MeetingParticipant[]
+
+  @@index([companyId])
+  @@index([date])
+}
+
+model MeetingParticipant {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  meetingId String   @db.ObjectId
+  userId    String   @db.ObjectId
+  status    String   @default("INVITED") // INVITED, ACCEPTED, DECLINED
+
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@index([meetingId])
+}
+
+model Notification {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  companyId  String   @db.ObjectId
+  userId     String   @db.ObjectId
+  title      String
+  message    String
+  type       String // TASK_ASSIGNED, TASK_DEADLINE, MENTION, PROJECT_ADDED, COMMENT_ADDED, REQUEST_STATUS, BUG_ASSIGNED, MEETING_SCHEDULED
+  entityType String? // task, bug, project, request, meeting
+  entityId   String?
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([isRead])
+}
+
+model Invitation {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  companyId    String    @db.ObjectId
+  email        String
+  roleId       String    @db.ObjectId
+  departmentId String?   @db.ObjectId
+  token        String    @unique
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  invitedById  String    @db.ObjectId
+  createdAt    DateTime  @default(now())
+
+  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  role         Role      @relation(fields: [roleId], references: [id])
+  invitedBy    User      @relation("InvitedByUser", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model AuditLog {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  companyId   String   @db.ObjectId
+  actorId     String   @db.ObjectId
+  action      String // e.g. "CREATE_PROJECT", "UPDATE_TASK", "APPROVE_REQUEST"
+  entityType  String // e.g. "Project", "Task", "Employee"
+  entityId    String
+  description String
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  actor       User     @relation("AuditActor", fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([createdAt])
+  @@index([actorId])
+}
