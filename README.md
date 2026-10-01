@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Enterprise Project Management & Operations Platform
 
 > A complete, production-ready business project management and internal company operations platform inspired by ClickUp, built with Next.js (App Router), Prisma, PostgreSQL/SQLite, TypeScript, Tailwind CSS, Lucide icons, Recharts, and Zod.
@@ -319,3 +320,6 @@ RESEND_API_KEY="re_your_resend_api_key"
 - [x] Protected audit logging capturing Actor, Action, Entity, Description, and IP
 - [x] Dark mode persistence with system preference fallback
 - [x] No hardcoded demo credentials in production code
+=======
+# Project-Management
+>>>>>>> f965abaeb700f01edab8aeda3aa583f307404c82
